@@ -44,6 +44,10 @@ The app supports multiple countries such as **US, UK, and India**, making it glo
 ![Multiple Holidays](./screenshots/Multi.png)
 
 
+### 🟢 To view for different contries
+![Dropdown](./screenshots/Search.png)
+
+
 
 
 ## 👨‍💻 Author
