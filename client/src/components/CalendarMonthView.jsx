@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { eachWeekOfInterval, eachDayOfInterval, startOfMonth, endOfMonth, endOfWeek, format } from "date-fns";
+import { eachWeekOfInterval, eachDayOfInterval, startOfMonth, endOfMonth, endOfWeek, format, addDays, isSameDay, addMonths, subMonths } from "date-fns";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const COUNTRIES = [
   { code: 'US', name: 'United States' },
@@ -24,7 +25,8 @@ const COUNTRIES = [
   { code: 'AT', name: 'Austria' }
 ];
 
-function CalendarMonthView({ month = new Date() }) {
+function CalendarMonthView({ month: initialMonth = new Date() }) {
+  const [currentMonth, setCurrentMonth] = useState(initialMonth);
   const [holidays, setHolidays] = useState([]);
   const [selectedCountry, setSelectedCountry] = useState('US');
   const [loading, setLoading] = useState(false);
@@ -35,10 +37,10 @@ function CalendarMonthView({ month = new Date() }) {
   const loadingTimeoutRef = useRef(null);
   
   const weeks = useMemo(() => {
-    const monthStart = startOfMonth(month);
-    const monthEnd = endOfMonth(month);
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(currentMonth);
     return eachWeekOfInterval({ start: monthStart, end: monthEnd }, { weekStartsOn: 1 });
-  }, [month]);
+  }, [currentMonth]);
 
   const holidayMap = useMemo(() => {
     const map = new Map();
@@ -48,7 +50,32 @@ function CalendarMonthView({ month = new Date() }) {
     return map;
   }, [holidays]);
 
-  const getHolidayDays = useCallback((weekStart) => {
+  const hasConsecutiveHolidays = useCallback((weekStart) => {
+    const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+    const days = eachDayOfInterval({ start: weekStart, end: weekEnd });
+    
+    for (let i = 0; i < days.length - 1; i++) {
+      const currentDay = format(days[i], "yyyy-MM-dd");
+      const nextDay = format(days[i + 1], "yyyy-MM-dd");
+      
+      if (holidayMap.has(currentDay) && holidayMap.has(nextDay)) {
+        return true;
+      }
+    }
+    
+    if (days.length > 0) {
+      const firstDay = format(days[0], "yyyy-MM-dd");
+      const dayBeforeWeek = format(addDays(days[0], -1), "yyyy-MM-dd");
+      
+      if (holidayMap.has(dayBeforeWeek) && holidayMap.has(firstDay)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }, [holidayMap]);
+
+  const getHolidayDays = useCallback((weekStart) => {//counter
     const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
     const days = eachDayOfInterval({ start: weekStart, end: weekEnd });
     return days.filter(d => holidayMap.has(format(d, "yyyy-MM-dd"))).length;
@@ -77,7 +104,7 @@ function CalendarMonthView({ month = new Date() }) {
     }
 
     setError(null);
-
+      
     try {
       const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`);
       
@@ -119,7 +146,7 @@ function CalendarMonthView({ month = new Date() }) {
   }, []);
 
   useEffect(() => {
-    const year = format(month, 'yyyy');
+    const year = format(currentMonth, 'yyyy');
     fetchHolidays(selectedCountry, year);
     
     return () => {
@@ -131,19 +158,29 @@ function CalendarMonthView({ month = new Date() }) {
         loadingTimeoutRef.current = null;
       }
     };
-  }, [selectedCountry, month, fetchHolidays]);
+  }, [selectedCountry, currentMonth, fetchHolidays]);
 
   const handleCountryChange = (e) => {
     setSelectedCountry(e.target.value);
   };
 
+  const handlePreviousMonth = () => {
+    setCurrentMonth(prev => subMonths(prev, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCurrentMonth(prev => addMonths(prev, 1));
+  };
+
   const currentMonthHolidays = useMemo(() => {
     return holidays.filter(holiday => {
       const holidayDate = new Date(holiday.date);
-      return format(holidayDate, 'MM') === format(month, 'MM') && 
-             format(holidayDate, 'yyyy') === format(month, 'yyyy');
+      return format(holidayDate, 'MM') === format(currentMonth, 'MM') && 
+             format(holidayDate, 'yyyy') === format(currentMonth, 'yyyy');
     });
-  }, [holidays, month]);
+  }, [holidays, currentMonth]);
+
+  const isCurrentMonth = format(currentMonth, 'yyyy-MM') === format(new Date(), 'yyyy-MM');
 
   return (
     <div style={{ 
@@ -181,6 +218,30 @@ function CalendarMonthView({ month = new Date() }) {
             outline: none;
             border-color: #4285f4;
             box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.1);
+          }
+          
+          .nav-button {
+            background: white;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 40px;
+            height: 40px;
+            color: #495057;
+          }
+          
+          .nav-button:hover {
+            border-color: #4285f4;
+            background-color: #f8f9fa;
+            color: #4285f4;
+          }
+          
+          .nav-button:active {
+            transform: translateY(1px);
           }
           
           .loading-spinner {
@@ -280,7 +341,7 @@ function CalendarMonthView({ month = new Date() }) {
           alignItems: 'center',
           gap: '16px',
           flexWrap: 'wrap',
-          minHeight: '56px' // Fixed height to prevent layout shift
+          minHeight: '56px'
         }}>
           <label style={{ 
             fontSize: '0.875rem',
@@ -342,42 +403,71 @@ function CalendarMonthView({ month = new Date() }) {
           </div>
         )}
 
-        {/* Month Title */}
+        {/* Month Navigation */}
         <div style={{ 
-          textAlign: 'center',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '16px',
           marginBottom: '32px',
-          padding: '16px',
+          padding: '20px',
           backgroundColor: '#f8f9fa',
-          borderRadius: '4px',
+          borderRadius: '8px',
           border: '1px solid #e9ecef'
         }}>
-          <h2 style={{ 
-            fontSize: '1.5rem',
-            fontWeight: '600',
-            color: '#212529',
-            margin: '0 0 4px 0'
+          <button 
+            onClick={handlePreviousMonth}
+            className="nav-button"
+            title="Previous month"
+          >
+            <ChevronLeft size={20} />
+          </button>
+
+          <div style={{ 
+            textAlign: 'center',
+            minWidth: '200px'
           }}>
-            {format(month, 'MMMM yyyy')}
-          </h2>
-          <p style={{ 
-            color: '#6c757d',
-            fontSize: '0.875rem',
-            margin: 0
-          }}>
-            {COUNTRIES.find(c => c.code === selectedCountry)?.name}
-          </p>
+            <h2 style={{ 
+              fontSize: '1.5rem',
+              fontWeight: '600',
+              color: '#212529',
+              margin: '0 0 4px 0'
+            }}>
+              {format(currentMonth, 'MMMM yyyy')}
+            </h2>
+            <p style={{ 
+              color: '#6c757d',
+              fontSize: '0.875rem',
+              margin: 0
+            }}>
+              {COUNTRIES.find(c => c.code === selectedCountry)?.name}
+            </p>
+          </div>
+
+          <button 
+            onClick={handleNextMonth}
+            className="nav-button"
+            title="Next month"
+          >
+            <ChevronRight size={20} />
+          </button>
         </div>
 
         {/* Calendar */}
         <div style={{ minHeight: '400px' }}>
           {weeks.map((weekStart, i) => {
             const holidayCount = getHolidayDays(weekStart);
+            const hasConsecutive = hasConsecutiveHolidays(weekStart);
+            
             let weekBgColor = 'white';
             
-            if (holidayCount === 1) {
-              weekBgColor = '#e8f5e8'; // Light green
+            // Priority: consecutive holidays > multiple holidays > single holiday
+            if (hasConsecutive) {
+              weekBgColor = '#fff9c4'; // Yellow for consecutive holidays
             } else if (holidayCount > 1) {
-              weekBgColor = '#c8e6c9'; // Dark green
+              weekBgColor = '#c8e6c9'; // Dark green for multiple holidays
+            } else if (holidayCount === 1) {
+              weekBgColor = '#e8f5e8'; // Light green for single holiday
             }
             
             const weekDays = eachDayOfInterval({ 
@@ -400,7 +490,7 @@ function CalendarMonthView({ month = new Date() }) {
               >
                 {weekDays.map((day, j) => {
                   const holiday = holidayMap.get(format(day, "yyyy-MM-dd"));
-                  const isCurrentMonth = format(day, 'MM') === format(month, 'MM');
+                  const isViewingCurrentMonth = format(day, 'MM') === format(currentMonth, 'MM');
                   const isToday = format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
                   
                   return (
@@ -411,7 +501,7 @@ function CalendarMonthView({ month = new Date() }) {
                         padding: '12px 8px',
                         textAlign: 'center',
                         borderRight: j < 6 ? '1px solid #e9ecef' : 'none',
-                        opacity: isCurrentMonth ? 1 : 0.5,
+                        opacity: isViewingCurrentMonth ? 1 : 0.5,
                         backgroundColor: isToday ? '#e3f2fd' : 'transparent',
                         display: 'flex',
                         flexDirection: 'column',
@@ -434,7 +524,7 @@ function CalendarMonthView({ month = new Date() }) {
                       }}>
                         {format(day, "EEE")}
                       </div>
-                      {holiday && isCurrentMonth && (
+                      {holiday && isViewingCurrentMonth && (
                         <div 
                           className="holiday-badge"
                           style={{ 
